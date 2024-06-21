@@ -12,12 +12,11 @@
 # limitations under the License.
 # =========== Copyright 2023 @ CAMEL-AI.org. All Rights Reserved. ===========
 import os
-
-import pytest
+from typing import Optional
+from unittest.mock import Mock, patch
 
 from camel.utils import (
-    api_keys_required,
-    dependencies_required,
+    ensure_requirements,
     get_system_information,
     get_task_list,
     to_pascal,
@@ -49,47 +48,47 @@ def test_get_task_list():
     assert len(task_list) == 1
 
 
-def test_dependencies_required(monkeypatch):
-    @dependencies_required('os')
-    def mock_dependencies_present():
-        return True
+def test_ensure_requirements():
+    # Mock function to be decorated
+    @ensure_requirements(api_keys=['API_KEY_1'], modules=['fake_module'])
+    def mock_function(self):
+        return "Function executed"
 
-    assert True if mock_dependencies_present() else False
-
-    @dependencies_required('some_module_not_exist')
-    def mock_dependencies_not_present():
-        return True
-
-    with pytest.raises(ImportError) as exc:
-        mock_dependencies_not_present()
-
-    assert "Missing required modules: some_module_not_exist" in str(exc.value)
-
-
-def test_api_keys_required():
-    os.environ['API_KEY_1'] = 'API_KEY_1_VALUE'
-    os.environ['API_KEY_2'] = 'API_KEY_2_VALUE'
-
+    # Helper class to test instance attribute API key
     class MockClass:
-        _api_key = None
+        def __init__(self, api_key: Optional[str] = None):
+            if api_key:
+                self._api_key = api_key
 
-        @api_keys_required('API_KEY_1', 'API_KEY_2')
-        def mock_api_keys_exist(self):
-            return True
+    # Test cases
+    with patch.dict(os.environ, {}, clear=True):
+        # Test missing API key in environment and instance attribute
+        mock_instance = MockClass()
+        try:
+            mock_function(mock_instance)
+            raise AssertionError("Expected ValueError for missing API keys")
+        except ValueError as e:
+            assert str(e) == "Missing API keys: API_KEY_1"
 
-        @api_keys_required('API_KEY_1', 'API_KEY_2', 'API_KEY_3')
-        def mock_api_keys_not_exist(self):
-            return True
+        # Test missing module
+        with patch.dict(os.environ, {'API_KEY_1': 'dummy_key'}, clear=True):
+            try:
+                mock_function(mock_instance)
+                raise AssertionError("Expected ImportError for missing module")
+            except ImportError as e:
+                assert str(e) == "Missing modules: fake_module"
 
-    mock_instance = MockClass()
+        # Test function execution with all requirements met
+        with patch.dict(os.environ, {'API_KEY_1': 'dummy_key'}, clear=True):
+            with patch('importlib.import_module', return_value=Mock()):
+                result = mock_function(mock_instance)
+                assert result == "Function executed"
 
-    # Test case where all required API keys are present
-    assert mock_instance.mock_api_keys_exist() is True
-
-    # Test case where some required API keys are missing
-    with pytest.raises(ValueError) as exc:
-        mock_instance.mock_api_keys_not_exist()
-    assert "Missing API keys: API_KEY_3" in str(exc.value)
+        # Test instance attribute API key presence
+        mock_instance_with_key = MockClass(api_key='instance_key')
+        with patch('importlib.import_module', return_value=Mock()):
+            result = mock_function(mock_instance_with_key)
+            assert result == "Function executed"
 
 
 def test_get_system_information():

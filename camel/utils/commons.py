@@ -160,46 +160,6 @@ def check_server_running(server_url: str) -> bool:
     return result == 0
 
 
-def dependencies_required(*required_modules: str) -> Callable[[F], F]:
-    r"""A decorator to ensure that specified Python modules
-    are available before a function executes.
-
-    Args:
-        required_modules (str): The required modules to be checked for
-            availability.
-
-    Returns:
-        Callable[[F], F]: The original function with the added check for
-            required module dependencies.
-
-    Raises:
-        ImportError: If any of the required modules are not available.
-
-    Example:
-        ::
-
-            @dependencies_required('numpy', 'pandas')
-            def data_processing_function():
-                # Function implementation...
-    """
-
-    def decorator(func: F) -> F:
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            missing_modules = [
-                m for m in required_modules if not is_module_available(m)
-            ]
-            if missing_modules:
-                raise ImportError(
-                    f"Missing required modules: {', '.join(missing_modules)}"
-                )
-            return func(*args, **kwargs)
-
-        return cast(F, wrapper)
-
-    return decorator
-
-
 def is_module_available(module_name: str) -> bool:
     r"""Check if a module is available for import.
 
@@ -216,25 +176,29 @@ def is_module_available(module_name: str) -> bool:
         return False
 
 
-def api_keys_required(*required_keys: str) -> Callable[[F], F]:
-    r"""A decorator to check if the required API keys are
-    present in the environment variables or as an instance attribute.
+def ensure_requirements(
+    api_keys: Optional[List[str]] = None, modules: Optional[List[str]] = None
+) -> Callable[[F], F]:
+    r"""A decorator to ensure that specified API keys and/or modules are
+    available before a function executes.
 
     Args:
-        required_keys (str): The required API keys to be checked.
+        api_keys (list[str], optional): The required API keys to be checked.
+        modules (list[str], optional): The required modules to be checked for
+            availability.
 
     Returns:
-        Callable[[F], F]: The original function with the added check
-            for required API keys.
+        Callable[[F], F]: The original function with the added checks for
+            required API keys and module dependencies.
 
     Raises:
         ValueError: If any of the required API keys are missing in the
             environment variables and the instance attribute.
+        ImportError: If any of the required modules are not available.
 
     Example:
-        ::
-
-            @api_keys_required('API_KEY_1', 'API_KEY_2')
+            @ensure_requirements(api_keys=['API_KEY_1'], modules=['numpy',
+            'pandas'])
             def some_api_function():
                 # Function implementation...
     """
@@ -242,16 +206,27 @@ def api_keys_required(*required_keys: str) -> Callable[[F], F]:
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(self, *args: Any, **kwargs: Any) -> Any:
-            missing_environment_keys = [
-                k for k in required_keys if k not in os.environ
-            ]
-            if (
-                not getattr(self, '_api_key', None)
-                and missing_environment_keys
-            ):
-                raise ValueError(
-                    f"Missing API keys: {', '.join(missing_environment_keys)}"
-                )
+            if api_keys:
+                missing_environment_keys = [
+                    k for k in api_keys if k not in os.environ
+                ]
+                if (
+                    not getattr(self, '_api_key', None)
+                    and missing_environment_keys
+                ):
+                    missing_keys = ', '.join(missing_environment_keys)
+                    raise ValueError(f"Missing API keys: {missing_keys}")
+
+            if modules:
+                missing_modules = [
+                    m for m in modules if not is_module_available(m)
+                ]
+                if missing_modules:
+                    missing_modules_str = ', '.join(missing_modules)
+                    raise ImportError(
+                        f"Missing modules: {missing_modules_str}"
+                    )
+
             return func(self, *args, **kwargs)
 
         return cast(F, wrapper)

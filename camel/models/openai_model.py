@@ -23,7 +23,7 @@ from camel.types import ChatCompletion, ChatCompletionChunk, ModelType
 from camel.utils import (
     BaseTokenCounter,
     OpenAITokenCounter,
-    api_keys_required,
+    ensure_requirements,
 )
 
 
@@ -71,7 +71,7 @@ class OpenAIModel(BaseModelBackend):
             self._token_counter = OpenAITokenCounter(self.model_type)
         return self._token_counter
 
-    @api_keys_required("OPENAI_API_KEY")
+    @ensure_requirements(api_keys=['OPENAI_API_KEY'])
     def run(
         self,
         messages: List[OpenAIMessage],
