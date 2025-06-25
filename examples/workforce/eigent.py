@@ -26,8 +26,10 @@ from camel.toolkits import (
     Crawl4AIToolkit,
     DalleToolkit,
     EdgeOnePagesMCPToolkit,
+    ExcelToolkit,
     FileWriteToolkit,
     FunctionTool,
+    # GoogleDriveMCPToolkit,
     HumanToolkit,
     ImageAnalysisToolkit,
     LinkedInToolkit,
@@ -168,15 +170,21 @@ Here are some tips that help you perform web search:
     )
 
 
-def document_agent_factory(model: BaseModelBackend, task_id: str):
+def document_agent_factory(
+    model: BaseModelBackend,
+    task_id: str,
+    # google_drive_mcp_toolkit: GoogleDriveMCPToolkit,
+):
     r"""Factory for creating a document agent, based on user-provided code
     structure."""
     tools = [
         *FileWriteToolkit().get_tools(),
         *PPTXToolkit().get_tools(),
+        # *google_drive_mcp_toolkit.get_tools(),
         # *RetrievalToolkit().get_tools(),
         HumanToolkit().ask_human_via_console,
         *MarkItDownToolkit().get_tools(),
+        *ExcelToolkit().get_tools(),
     ]
 
     system_message = """You are a Document Processing Assistant specialized in 
@@ -201,7 +209,20 @@ def document_agent_factory(model: BaseModelBackend, task_id: str):
        - Create tables with headers and rows of data
        - Support for custom templates and slide layouts
 
-    3. Human Interaction:
+    3. Excel Spreadsheet Management:
+       - Extract and analyze content from Excel files (.xlsx, .xls, .csv) 
+       with detailed cell information and markdown formatting
+       - Create new Excel workbooks from scratch with multiple sheets
+       - Perform comprehensive spreadsheet operations including:
+         * Sheet creation, deletion, and data clearing
+         * Cell-level operations (read, write, find specific values)
+         * Row and column manipulation (add, update, delete)
+         * Range operations for bulk data processing
+         * Data export to CSV format for compatibility
+       - Handle complex data structures with proper formatting and validation
+       - Support for both programmatic data entry and manual cell updates
+
+    4. Human Interaction:
        - Ask questions to users and receive their responses
        - Send informative messages to users without requiring responses
 
@@ -211,9 +232,13 @@ def document_agent_factory(model: BaseModelBackend, task_id: str):
     - Provide clear feedback about document creation and modification processes
     - Ask clarifying questions when user requirements are ambiguous
     - Recommend best practices for document organization and presentation
+    - For Excel files, always provide clear data structure and organization
+    - When creating spreadsheets, consider data relationships and use 
+    appropriate sheet naming conventions
 
     Your goal is to help users efficiently create, modify, and manage their 
-    documents with professional quality and appropriate formatting."""
+    documents with professional quality and appropriate formatting across all 
+    supported formats including advanced spreadsheet functionality."""
 
     return ChatAgent(
         system_message=BaseMessage.make_assistant_message(
@@ -347,8 +372,12 @@ operations.
 
 async def main():
     edgeone_pages_mcp_toolkit = EdgeOnePagesMCPToolkit()
+    # google_drive_mcp_toolkit = GoogleDriveMCPToolkit(
+    #     credentials_path="path/to/credentials.json"
+    # )
     try:
         await edgeone_pages_mcp_toolkit.connect()
+        # await google_drive_mcp_toolkit.connect()
 
         # Create a single model backend for all agents
         model_backend = ModelFactory.create(
@@ -379,7 +408,11 @@ async def main():
         developer_agent = developer_agent_factory(
             model_backend, task_id, edgeone_pages_mcp_toolkit
         )
-        document_agent = document_agent_factory(model_backend, task_id)
+        document_agent = document_agent_factory(
+            model_backend,
+            task_id,
+            # google_drive_mcp_toolkit
+        )
         multi_modal_agent = multi_modal_agent_factory(model_backend, task_id)
 
         # Configure kwargs for all agents to use the same model_backend
@@ -451,6 +484,7 @@ slides should be very comprehensive and professional.
 
     finally:
         await edgeone_pages_mcp_toolkit.disconnect()
+        # await google_drive_mcp_toolkit.disconnect()
 
 
 if __name__ == "__main__":
