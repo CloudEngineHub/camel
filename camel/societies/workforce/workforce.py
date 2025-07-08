@@ -551,6 +551,10 @@ class Workforce(BaseNode):
                     continue
 
             if not memory_records:
+                logger.warning(
+                    "No valid memory records could be reconstructed "
+                    "for sharing"
+                )
                 return
 
             # Share with coordinator agent
@@ -667,6 +671,12 @@ class Workforce(BaseNode):
         """
         if task_id in self._task_start_times:
             del self._task_start_times[task_id]
+
+        if task_id in self._task_dependencies:
+            del self._task_dependencies[task_id]
+
+        if task_id in self._assignees:
+            del self._assignees[task_id]
 
     def _decompose_task(self, task: Task) -> List[Task]:
         r"""Decompose the task into subtasks. This method will also set the
@@ -991,8 +1001,13 @@ class Workforce(BaseNode):
         tasks_dict = {task.id: task for task in self._pending_tasks}
 
         # Check if all provided IDs exist
-        if not all(task_id in tasks_dict for task_id in task_ids):
-            logger.warning("Some task IDs not found in pending tasks.")
+        invalid_ids = [
+            task_id for task_id in task_ids if task_id not in tasks_dict
+        ]
+        if invalid_ids:
+            logger.warning(
+                f"Task IDs not found in pending tasks: {invalid_ids}"
+            )
             return False
 
         # Check if we have the same number of tasks
@@ -2057,7 +2072,6 @@ class Workforce(BaseNode):
                     logger.error(
                         f"JSON parsing error in worker creation: Invalid "
                         f"response format - {e}. Response content: "
-                        f"format - {e}. Response content: "
                         f"{response.msg.content[:100]}..."
                     )
                     raise RuntimeError(
@@ -2145,17 +2159,7 @@ class Workforce(BaseNode):
                 f"Current pending tasks: {len(self._pending_tasks)}, "
                 f"In-flight tasks: {self._in_flight_tasks}"
             )
-            logger.warning(error_msg)
-
-            if self._pending_tasks and self._assignees:
-                for task in self._pending_tasks:
-                    if task.id in self._assignees:
-                        # Mark task as failed and decrement counter
-                        task.set_state(TaskState.FAILED)
-                        self._decrement_in_flight_tasks(
-                            task.id, "timeout/error in _get_returned_task"
-                        )
-                        return task
+            logger.error(error_msg, exc_info=True)
             return None
 
     async def _post_ready_tasks(self) -> None:
@@ -2231,12 +2235,8 @@ class Workforce(BaseNode):
         task.failure_count += 1
 
         # Determine detailed failure information
-        if is_task_result_insufficient(task):
-            failure_reason = "Worker returned unhelpful "
-            f"response: {task.result[:100] if task.result else ''}..."
-        else:
-            failure_reason = "Task marked as failed despite "
-            f"having result: {(task.result or '')[:100]}..."
+        # Use the actual error/result stored in task.result
+        failure_reason = task.result or "Unknown error"
 
         # Add context about the worker and task
         worker_id = task.assigned_worker_id or "unknown"
